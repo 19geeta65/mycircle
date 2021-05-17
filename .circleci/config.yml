@@ -1,153 +1,58 @@
-# This is Journalistic's A&O CI workflow. Whenever we push code to github
-# that's not the master branch, it needs to download the branch, push it up to
-# Pantheon, create a CI environment, run the visual regression testing, and
-# then run the cypress testing.
+# PHP CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-php/ for more details
+#
 version: 2
-orbs:
-  core: o3world/orb-o3-core@volatile
-  tests: o3world/orb-ci-tests@volatile
-  node: circleci/node@1.1.6
-executors:
-  build-tools-ci:
-    docker:
-      - image: circleci/php:7.3-node
-    working_directory: ~/repo
-defaults: &defaults
-  docker:
-    - image: quay.io/pantheon-public/build-tools-ci:4.x
-  working_directory: ~/app
-  environment:
-    TZ: "/usr/share/zoneinfo/America/New_York"
-    TERMINUS_SITE:  "reacts"
-    TERMINUS_TOKEN: "R81d0KN9SsarKcQKJlSyp8ufixvHBb3s8eo13XUuFZorb"
-    GITHUB_TOKEN:   "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"
-    GIT_EMAIL:      "19geeta65@gmail.com"
-    ADMIN_USERNAME: admin
-    TERM: dumb
-    NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
-
 jobs:
   build:
-    <<: *defaults
+    docker:
+      # Specify the version you desire here
+      - image: circleci/php:7.1-node-browsers
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # Using the RAM variation mitigates I/O contention
+      # for database intensive operations.
+      # - image: circleci/mysql:5.7-ram
+      #
+      # - image: redis:2.8.19
+
     steps:
       - checkout
 
-      - run:
-          # Set TERMINUS_ENV and related environment variables.
-          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/1.x/scripts/set-environment
-          name: dependencies
-          command: /build-tools-ci/scripts/set-environment
+      - run: sudo apt update # PHP CircleCI 2.0 Configuration File# PHP CircleCI 2.0 Configuration File sudo apt install zlib1g-dev libsqlite3-dev
+      - run: sudo docker-php-ext-install zip
 
-      - run:
-          name: Global vars
-          # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
-          command: ./.circleci/set-up-global-vars.sh
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+            # "composer.lock" can be used if it is committed to the repo
+            - v1-dependencies-{{ checksum "composer.json" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
 
-      - run:
-          name: login, delete other ci environments
-          command: ./.circleci/scripts/pantheon/01-prepare
+      - run: composer install -n --prefer-dist
 
-      - add_ssh_keys:
-          fingerprints:
-            - "[ssh key fingerprint]"
-
-      - run:
-          name: prepare database for site-under test
-          command: ./.circleci/scripts/pantheon/02-init-site
-
-      - run:
-          name: Set TERMINUS_ENV for Backstop
-          command: |
-              mkdir globals
-              echo $TERMINUS_ENV > globals/TERMINUS_ENV
-
-      - persist_to_workspace:
-          root: .
+      - save_cache:
+          key: v1-dependencies-{{ checksum "composer.json" }}
           paths:
-              - globals
+            - ./vendor
+      - restore_cache:
+          keys:
+            - node-v1-{{ checksum "package.json" }}
+            - node-v1-
+      - run: yarn install
+      - save_cache:
+          key: node-v1-{{ checksum "package.json" }}
+          paths:
+            - node_modules
 
-  backstop:
-    docker:
-      - image: quay.io/stevector/ci-backstop:latest
-    working_directory: ~/app
-    steps:
-        - checkout
+      # prepare the database
+      - run: touch storage/testing.sqlite
+      - run: php artisan migrate --env=testing --database=sqlite_testing --force
 
-        - attach_workspace:
-            at: /tmp
-
-        - run:
-            name: Global vars
-            # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
-            command: ./.circleci/set-up-global-vars.sh
-
-        - run:
-            name: run-backstop
-            command: cd backstop && ./run-backstop.sh
-
-        - store_artifacts:
-            path: /tmp/artifacts
-            destination: artifact
-
-  cypress:
-    docker:
-      - image: cypress/browsers:chrome67
-    working_directory: ~/app
-    steps:
-        - checkout
-
-        - attach_workspace:
-            at: /tmp
-
-        - run:
-            name: Global vars
-            # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
-            command: ./.circleci/set-up-global-vars.sh
-
-        # find compatible cache from previous build,
-        # it should have same dependencies installed from package.json checksum
-        - restore_cache:
-            keys:
-              - cache-{{ .Branch }}-{{ checksum "package.json" }}
-
-        - run:
-            name: Install dependencies
-            command: npm ci
-
-        # run verify and then save cache.
-        # this ensures that the Cypress verified status is cached too
-        - run: npm run cy:verify
-
-        # save new cache folder if needed
-        - save_cache:
-            key: cache-{{ .Branch }}-{{ checksum "package.json" }}
-            paths:
-              - ~/.npm
-              - ~/.cache
-
-        - run:
-            name: Run tests
-            command: npm run e2e:record
-
-        # - run: npm run types
-        # - run: npm run stop-only
-        # all other test jobs will run AFTER this build job finishes
-        # to avoid reinstalling dependencies, we persist the source folder "app"
-        # and the Cypress binary to workspace, which is the fastest way
-        # for Circle jobs to pass files
-        - persist_to_workspace:
-            root: ~/
-            paths:
-              - app
-              - .cache/Cypress
-
-workflows:
-  build_and_test:
-    jobs:
-      - build
-      - backstop:
-          requires:
-            - build
-      - cypress:
-          requires:
-            - build
+      # run tests with phpunit or codecept
+      #- run: ./vendor/bin/phpunit
+      - run: ./vendor/bin/codecept build
+      - run: ./vendor/bin/codecept run
