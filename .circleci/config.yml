@@ -1,58 +1,169 @@
-# PHP CircleCI 2.0 configuration file
-#
-# Check https://circleci.com/docs/2.0/language-php/ for more details
-#
-version: 2
-jobs:
-  build:
+# is licensed from CircleCI to the user under the MIT license.
+# See here for details: https://circleci.com/developer/orbs/licensing
+# https://circleci.com/docs/2.0/workflows/#using-workspaces-to-share-data-among-jobs
+version: 2.1
+orbs:
+  core: o3world/orb-o3-core@volatile
+  tests: o3world/orb-ci-tests@volatile
+  node: circleci/node@1.1.6
+executors:
+  build-tools-ci:
     docker:
-      # Specify the version you desire here
-      - image: circleci/php:7.1-node-browsers
+      - image: circleci/php:7.3-node
+    working_directory: ~/repo
+defaults: &defaults
+  executor: build-tools-ci
+  environment:
+    #=========================================================================
+    # In addition to the environment variables defined in this file, also
+    # add the following variables in the Circle CI UI.
+    #
+    # See: https://circleci.com/docs/2.0/env-vars/
+    #
+    # TERMINUS_SITE:  Name of the Pantheon site to run tests on, e.g. my_site
+    # TERMINUS_TOKEN: The Pantheon machine token
+    # GITHUB_TOKEN:   The GitHub personal access token
+    # GIT_EMAIL:      The email address to use when making commits
+    #
+    # TEST_SITE_NAME: The name of the test site to provide when installing.
+    # ADMIN_PASSWORD: The admin password to use when installing.
+    # ADMIN_EMAIL:    The email address to give the admin when installing.
+    #=========================================================================
+    TZ: "/usr/share/zoneinfo/America/Los_Angeles"
 
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # Using the RAM variation mitigates I/O contention
-      # for database intensive operations.
-      # - image: circleci/mysql:5.7-ram
-      #
-      # - image: redis:2.8.19
+    # The variables below usually do not need to be modified.
 
+    #======================================================================================================================================
+    # Circle CI 2.0 does not yet expand environment variables so they have to be manually EXPORTed
+    # Once environment variables can be expanded the variables below can be uncommented and the EXPORTs in set-up-globals.sh can be removed
+    # See: https://discuss.circleci.com/t/unclear-how-to-work-with-user-variables-circleci-provided-env-variables/12810/11
+    # See: https://discuss.circleci.com/t/environment-variable-expansion-in-working-directory/11322
+    # See: https://discuss.circleci.com/t/circle-2-0-global-environment-variables/8681
+    #======================================================================================================================================
+
+    NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
+    ADMIN_USERNAME: admin
+    # BUILD_TOOLS_VERSION: ^2.0.0-alpha4
+    TERM: dumb
+jobs:
+  deploy:
+    <<: *defaults
+    parameters:
+      platform:
+        default: "drupal"
+        description: The target Operating System for the heroku binary. Must be one of "linux", "darwin", "win32".
+        type: enum
+        enum: ["drupal", "wordpress"]
+      drupal_composer:
+        type: boolean
+        default: false
+      sass_compile_dir:
+        type: string
+        default: ""
+      sass_compile_command:
+        type: string
+        default: ""
+
+    description: Greet the user politely
+    executor: build-tools-ci
     steps:
+      - run:
+          name: Install rsync
+          command: sudo apt-get update && sudo apt-get install rsync
+      - run:
+          name: Install orb scripts
+          command: mkdir ~/src && cd ~/src && npm init -y && npm install @o3world/orb-pantheon && mv node_modules/@o3world/orb-pantheon/src/* . &&  chmod -R 777 . && mv node_modules/@o3world/orb-pantheon/* . && npm install
+      - run:
+          name: Fix ~/.terminus/plugins/terminus-build-tools-plugin
+          command: sudo chown -R circleci /usr/local
+      - restore_cache:
+          keys:
+            - cache-{{ .Environment.CACHE_VERSION }}-repo-source-{{ .Branch }}-
+            - cache-{{ .Environment.CACHE_VERSION }}-repo-source-
+      - restore_cache:
+          keys:
+            - cache-{{ .Environment.CACHE_VERSION }}-build-tools6
       - checkout
-
-      - run: sudo apt update # PHP CircleCI 2.0 Configuration File# PHP CircleCI 2.0 Configuration File sudo apt install zlib1g-dev libsqlite3-dev
-      - run: sudo docker-php-ext-install zip
-
-      # Download and cache dependencies
-      - restore_cache:
-          keys:
-            # "composer.lock" can be used if it is committed to the repo
-            - v1-dependencies-{{ checksum "composer.json" }}
-            # fallback to using the latest cache if no exact match is found
-            - v1-dependencies-
-
-      - run: composer install -n --prefer-dist
-
+      - run:
+          name: Build and cache build tools
+          command: |
+            if [[ ! -d ~/.terminus/plugins/terminus-build-tools-plugin ]]; then
+                echo "building terminus"
+                ~/src/build/build-tools
+            else
+                echo "no need to compile"
+            fi
+      - run:
+          name: Create drush symbolic link
+          command: ln -fs /usr/local/share/drush/vendor/drush/drush/drush /usr/local/bin/drush && chmod +x /usr/local/bin/drush
+      - run:
+          name: Create terminus symbolic link
+          command: ln -fs /usr/local/share/terminus/vendor/pantheon-systems/terminus/bin/terminus /usr/local/bin/terminus && chmod +x /usr/local/bin/terminus
       - save_cache:
-          key: v1-dependencies-{{ checksum "composer.json" }}
+          key: cache-{{ .Environment.CACHE_VERSION }}-build-tools6
           paths:
-            - ./vendor
-      - restore_cache:
-          keys:
-            - node-v1-{{ checksum "package.json" }}
-            - node-v1-
-      - run: yarn install
+            - ~/.terminus
+            - /usr/local/share/terminus
+            - /usr/local/share/drush
+      - run:
+          # Set TERMINUS_ENV and related environment variables.
+          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/6.x/scripts/set-environment
+          name: setup-environment-vars
+          command: ~/src/build/set-environment
+      - tests/set-env-vars:
+          BACKSTOP_CONFIG_PATH: tests/backstop/config.js
+          CYPRESS_CONFIG_PATH: tests/cypress
+      - core/set-env-vars:
+          PR_TEST_SITE_URL: ${MULTIDEV_SITE_URL}
+          PLATFORM_ID: ${TERMINUS_ENV}
+      - run:
+          name: clone-bash-env
+          command: cp $BASH_ENV bash_env.txt
+
+      - when:
+          condition: << parameters.sass_compile_dir >>
+          steps:
+            - run: echo "my custom checkout"
+            - run: cd ~/repo/<<parameters.sass_compile_dir>> && npm install
+            - run: cd ~/repo/<<parameters.sass_compile_dir>> && <<parameters.sass_compile_command>>
+            - run: cd ~/repo/<<parameters.sass_compile_dir>> && rm -r node_modules
+      - when:
+          condition: << parameters.drupal_composer >>
+          steps:
+            - restore_cache:
+                keys:
+                  - cache-{{ .Environment.CACHE_VERSION }}-composer-files-{{ checksum "composer.lock" }}
+                  - cache-{{ .Environment.CACHE_VERSION }}-composer-files-
+            - run: ~/src/build/php
+            - save_cache:
+                key: cache-{{ .Environment.CACHE_VERSION }}-composer-files-{{ checksum "composer.lock" }}
+                paths:
+                  - web/.gitattributes
+                  - web/.ht.router.php
+                  - web/autoload.php
+                  - web/contrib
+                  - web/index.php
+                  - web/sites/default/default.services.pantheon.preproduction.yml
+                  - web/sites/default/settings.pantheon.php
+                  - web/update.php
+                  - web/robots.txt
+                  - web/core
+                  - vendor
+            - save_cache:
+                key: cache-{{ .Environment.CACHE_VERSION }}-composer-home-{{ checksum "composer.lock" }}
+                paths:
+                  - ~/.composer
+
+
+
+      - run:
+          name: deploy to Pantheon
+          command: ~/src/deploy/pantheon/<< parameters.platform >>-dev-multidev
       - save_cache:
-          key: node-v1-{{ checksum "package.json" }}
+          key: cache-{{ .Environment.CACHE_VERSION }}-repo-source-{{ .Branch }}-
           paths:
-            - node_modules
-
-      # prepare the database
-      - run: touch storage/testing.sqlite
-      - run: php artisan migrate --env=testing --database=sqlite_testing --force
-
-      # run tests with phpunit or codecept
-      #- run: ./vendor/bin/phpunit
-      - run: ./vendor/bin/codecept build
-      - run: ./vendor/bin/codecept run
+            - ".git"
+      - persist_to_workspace:
+          root: .
+          paths:
+            - bash_env.txt
