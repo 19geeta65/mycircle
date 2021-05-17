@@ -26,7 +26,7 @@ defaults: &defaults
     TERM: dumb
     NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
 
-version: 2
+version: 2.2
 
 jobs:
   build:
@@ -144,7 +144,7 @@ jobs:
               - .cache/Cypress
 
 workflows:
-  version: 2
+  version: 2.3
   build_and_test:
     jobs:
       - build
