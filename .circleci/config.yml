@@ -2,7 +2,7 @@
 # that's not the master branch, it needs to download the branch, push it up to
 # Pantheon, create a CI environment, run the visual regression testing, and
 # then run the cypress testing.
-version: 2.1
+version: 2
 orbs:
   core: o3world/orb-o3-core@volatile
   tests: o3world/orb-ci-tests@volatile
@@ -25,8 +25,6 @@ defaults: &defaults
     ADMIN_USERNAME: admin
     TERM: dumb
     NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
-
-version: 2.2
 
 jobs:
   build:
@@ -144,7 +142,6 @@ jobs:
               - .cache/Cypress
 
 workflows:
-  version: 2.3
   build_and_test:
     jobs:
       - build
