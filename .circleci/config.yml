@@ -1,6 +1,7 @@
-# is licensed from CircleCI to the user under the MIT license.
-# See here for details: https://circleci.com/developer/orbs/licensing
-# https://circleci.com/docs/2.0/workflows/#using-workspaces-to-share-data-among-jobs
+# This is Journalistic's A&O CI workflow. Whenever we push code to github
+# that's not the master branch, it needs to download the branch, push it up to
+# Pantheon, create a CI environment, run the visual regression testing, and
+# then run the cypress testing.
 version: 2.1
 orbs:
   core: o3world/orb-o3-core@volatile
@@ -12,158 +13,144 @@ executors:
       - image: circleci/php:7.3-node
     working_directory: ~/repo
 defaults: &defaults
-  executor: build-tools-ci
+  docker:
+    - image: quay.io/pantheon-public/build-tools-ci:4.x
+  working_directory: ~/app
   environment:
-    #=========================================================================
-    # In addition to the environment variables defined in this file, also
-    # add the following variables in the Circle CI UI.
-    #
-    # See: https://circleci.com/docs/2.0/env-vars/
-    #
+    TZ: "/usr/share/zoneinfo/America/New_York"
     TERMINUS_SITE:  "reacts"
     TERMINUS_TOKEN: "R81d0KN9SsarKcQKJlSyp8ufixvHBb3s8eo13XUuFZorb"
     GITHUB_TOKEN:   "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"
     GIT_EMAIL:      "19geeta65@gmail.com"
-    #
-    #TEST_SITE_NAME: The name of the test site to provide when installing.
-    #ADMIN_PASSWORD: The admin password to use when installing.
-    #ADMIN_EMAIL:    The email address to give the admin when installing.
-    #=========================================================================
-    TZ: "/usr/share/zoneinfo/America/Los_Angeles"
-
-    # The variables below usually do not need to be modified.
-
-    #======================================================================================================================================
-    # Circle CI 2.0 does not yet expand environment variables so they have to be manually EXPORTed
-    # Once environment variables can be expanded the variables below can be uncommented and the EXPORTs in set-up-globals.sh can be removed
-    # See: https://discuss.circleci.com/t/unclear-how-to-work-with-user-variables-circleci-provided-env-variables/12810/11
-    # See: https://discuss.circleci.com/t/environment-variable-expansion-in-working-directory/11322
-    # See: https://discuss.circleci.com/t/circle-2-0-global-environment-variables/8681
-    #======================================================================================================================================
-
-    NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
     ADMIN_USERNAME: admin
-    # BUILD_TOOLS_VERSION: ^2.0.0-alpha4
     TERM: dumb
-jobs:
-  deploy:
-    <<: *defaults
-    parameters:
-      platform:
-        default: "drupal"
-        description: The target Operating System for the heroku binary. Must be one of "linux", "darwin", "win32".
-        type: enum
-        enum: ["drupal", "wordpress"]
-      drupal_composer:
-        type: boolean
-        default: false
-      sass_compile_dir:
-        type: string
-        default: ""
-      sass_compile_command:
-        type: string
-        default: ""
+    NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
 
-    description: Greet the user politely
-    executor: build-tools-ci
+version: 2
+
+jobs:
+  build:
+    <<: *defaults
     steps:
-      - run:
-          name: Install rsync
-          command: sudo apt-get update && sudo apt-get install rsync
-      - run:
-          name: Install orb scripts
-          command: mkdir ~/src && cd ~/src && npm init -y && npm install @o3world/orb-pantheon && mv node_modules/@o3world/orb-pantheon/src/* . &&  chmod -R 777 . && mv node_modules/@o3world/orb-pantheon/* . && npm install
-      - run:
-          name: Fix ~/.terminus/plugins/terminus-build-tools-plugin
-          command: sudo chown -R circleci /usr/local
-      - restore_cache:
-          keys:
-            - cache-{{ .Environment.CACHE_VERSION }}-repo-source-{{ .Branch }}-
-            - cache-{{ .Environment.CACHE_VERSION }}-repo-source-
-      - restore_cache:
-          keys:
-            - cache-{{ .Environment.CACHE_VERSION }}-build-tools6
       - checkout
-      - run:
-          name: Build and cache build tools
-          command: |
-            if [[ ! -d ~/.terminus/plugins/terminus-build-tools-plugin ]]; then
-                echo "building terminus"
-                ~/src/build/build-tools
-            else
-                echo "no need to compile"
-            fi
-      - run:
-          name: Create drush symbolic link
-          command: ln -fs /usr/local/share/drush/vendor/drush/drush/drush /usr/local/bin/drush && chmod +x /usr/local/bin/drush
-      - run:
-          name: Create terminus symbolic link
-          command: ln -fs /usr/local/share/terminus/vendor/pantheon-systems/terminus/bin/terminus /usr/local/bin/terminus && chmod +x /usr/local/bin/terminus
-      - save_cache:
-          key: cache-{{ .Environment.CACHE_VERSION }}-build-tools6
-          paths:
-            - ~/.terminus
-            - /usr/local/share/terminus
-            - /usr/local/share/drush
+
       - run:
           # Set TERMINUS_ENV and related environment variables.
-          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/6.x/scripts/set-environment
-          name: setup-environment-vars
-          command: ~/src/build/set-environment
-      - tests/set-env-vars:
-          BACKSTOP_CONFIG_PATH: tests/backstop/config.js
-          CYPRESS_CONFIG_PATH: tests/cypress
-      - core/set-env-vars:
-          PR_TEST_SITE_URL: ${MULTIDEV_SITE_URL}
-          PLATFORM_ID: ${TERMINUS_ENV}
-      - run:
-          name: clone-bash-env
-          command: cp $BASH_ENV bash_env.txt
-
-      - when:
-          condition: << parameters.sass_compile_dir >>
-          steps:
-            - run: echo "my custom checkout"
-            - run: cd ~/repo/<<parameters.sass_compile_dir>> && npm install
-            - run: cd ~/repo/<<parameters.sass_compile_dir>> && <<parameters.sass_compile_command>>
-            - run: cd ~/repo/<<parameters.sass_compile_dir>> && rm -r node_modules
-      - when:
-          condition: << parameters.drupal_composer >>
-          steps:
-            - restore_cache:
-                keys:
-                  - cache-{{ .Environment.CACHE_VERSION }}-composer-files-{{ checksum "composer.lock" }}
-                  - cache-{{ .Environment.CACHE_VERSION }}-composer-files-
-            - run: ~/src/build/php
-            - save_cache:
-                key: cache-{{ .Environment.CACHE_VERSION }}-composer-files-{{ checksum "composer.lock" }}
-                paths:
-                  - web/.gitattributes
-                  - web/.ht.router.php
-                  - web/autoload.php
-                  - web/contrib
-                  - web/index.php
-                  - web/sites/default/default.services.pantheon.preproduction.yml
-                  - web/sites/default/settings.pantheon.php
-                  - web/update.php
-                  - web/robots.txt
-                  - web/core
-                  - vendor
-            - save_cache:
-                key: cache-{{ .Environment.CACHE_VERSION }}-composer-home-{{ checksum "composer.lock" }}
-                paths:
-                  - ~/.composer
-
-
+          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/1.x/scripts/set-environment
+          name: dependencies
+          command: /build-tools-ci/scripts/set-environment
 
       - run:
-          name: deploy to Pantheon
-          command: ~/src/deploy/pantheon/<< parameters.platform >>-dev-multidev
-      - save_cache:
-          key: cache-{{ .Environment.CACHE_VERSION }}-repo-source-{{ .Branch }}-
-          paths:
-            - ".git"
+          name: Global vars
+          # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
+          command: ./.circleci/set-up-global-vars.sh
+
+      - run:
+          name: login, delete other ci environments
+          command: ./.circleci/scripts/pantheon/01-prepare
+
+      - add_ssh_keys:
+          fingerprints:
+            - "[ssh key fingerprint]"
+
+      - run:
+          name: prepare database for site-under test
+          command: ./.circleci/scripts/pantheon/02-init-site
+
+      - run:
+          name: Set TERMINUS_ENV for Backstop
+          command: |
+              mkdir globals
+              echo $TERMINUS_ENV > globals/TERMINUS_ENV
+
       - persist_to_workspace:
           root: .
           paths:
-            - bash_env.txt
+              - globals
+
+  backstop:
+    docker:
+      - image: quay.io/stevector/ci-backstop:latest
+    working_directory: ~/app
+    steps:
+        - checkout
+
+        - attach_workspace:
+            at: /tmp
+
+        - run:
+            name: Global vars
+            # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
+            command: ./.circleci/set-up-global-vars.sh
+
+        - run:
+            name: run-backstop
+            command: cd backstop && ./run-backstop.sh
+
+        - store_artifacts:
+            path: /tmp/artifacts
+            destination: artifact
+
+  cypress:
+    docker:
+      - image: cypress/browsers:chrome67
+    working_directory: ~/app
+    steps:
+        - checkout
+
+        - attach_workspace:
+            at: /tmp
+
+        - run:
+            name: Global vars
+            # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
+            command: ./.circleci/set-up-global-vars.sh
+
+        # find compatible cache from previous build,
+        # it should have same dependencies installed from package.json checksum
+        - restore_cache:
+            keys:
+              - cache-{{ .Branch }}-{{ checksum "package.json" }}
+
+        - run:
+            name: Install dependencies
+            command: npm ci
+
+        # run verify and then save cache.
+        # this ensures that the Cypress verified status is cached too
+        - run: npm run cy:verify
+
+        # save new cache folder if needed
+        - save_cache:
+            key: cache-{{ .Branch }}-{{ checksum "package.json" }}
+            paths:
+              - ~/.npm
+              - ~/.cache
+
+        - run:
+            name: Run tests
+            command: npm run e2e:record
+
+        # - run: npm run types
+        # - run: npm run stop-only
+        # all other test jobs will run AFTER this build job finishes
+        # to avoid reinstalling dependencies, we persist the source folder "app"
+        # and the Cypress binary to workspace, which is the fastest way
+        # for Circle jobs to pass files
+        - persist_to_workspace:
+            root: ~/
+            paths:
+              - app
+              - .cache/Cypress
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build
+      - backstop:
+          requires:
+            - build
+      - cypress:
+          requires:
+            - build
