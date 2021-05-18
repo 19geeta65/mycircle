@@ -22,9 +22,58 @@ jobs: # conditional steps may also be defined in `commands:`
           condition: <<parameters.custom_checkout>>
           steps:
             - checkout
+  job_to_deploy_on_pantheon:
+    environment:
+      TZ: "/usr/share/zoneinfo/America/New_York"
+      TERMINUS_SITE:  "reacts"
+      TERMINUS_TOKEN: "R81d0KN9SsarKcQKJlSyp8ufixvHBb3s8eo13XUuFZorb"
+      GITHUB_TOKEN:   "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"
+      GIT_EMAIL:      "19geeta65@gmail.com"
+      ADMIN_USERNAME: admin
+      TERM: dumb
+      NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
+    steps:
+      - checkout
+
+      - run:
+          # Set TERMINUS_ENV and related environment variables.
+          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/1.x/scripts/set-environment
+          name: dependencies
+          command: /build-tools-ci/scripts/set-environment
+
+      - run:
+          name: Global vars
+          # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
+          command: ./.circleci/set-up-global-vars.sh
+
+      - run:
+          name: login, delete other ci environments
+          command: ./.circleci/scripts/pantheon/01-prepare
+
+      - add_ssh_keys:
+          fingerprints:
+            - "[ssh key fingerprint]"
+
+      - run:
+          name: prepare database for site-under test
+          command: ./.circleci/scripts/pantheon/02-init-site
+
+      - run:
+          name: Set TERMINUS_ENV for Backstop
+          command: |
+              mkdir globals
+              echo $TERMINUS_ENV > globals/TERMINUS_ENV
+
+      - persist_to_workspace:
+          root: .
+          paths:
+              - globals
 workflows:
   build-test-deploy:
     jobs:
       - job_with_optional_custom_checkout:
           custom_checkout: "any non-empty string is truthy"
       - job_with_optional_custom_checkout
+    jobs:
+      - job_to_deploy_on_pantheon:  
+          custom_checkout: "any non-empty string is truthy"      
