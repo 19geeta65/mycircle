@@ -1,31 +1,8 @@
-jobs:
-  build:
-    <<: *container_config
-    steps:
-      - checkout
-      - run:
-          name: Install dependencies
-          command: composer install -n -o
-      - persist_to_workspace:
-          root: .
-          paths:
-            - '*'
-
-  test:
-    <<: *container_config
-    steps:
-      - *attach_workspace
-      - run:
-          name: Run tests
-          command: composer test
-
-  deploy:
-    <<: *container_config
-    steps:
-      - *attach_workspace
-      - run:
-          name: Remove development dependencies
-          command: composer install --no-dev -n -o
-      - run:
-          name: Deploy to Pantheon
-          command: .circleci/deploy_to_pantheon.sh
+version: 2.1
+workflows:
+  version: 2
+  just_push:
+      jobs:
+      - pantheon/push
+orbs:
+  pantheon: pantheon-systems/pantheon@0.5.2
