@@ -32,6 +32,7 @@ jobs: # conditional steps may also be defined in `commands:`
       ADMIN_USERNAME: admin
       TERM: dumb
       NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
+    machine: true
     steps:
       - checkout
 
@@ -74,6 +75,4 @@ workflows:
       - job_with_optional_custom_checkout:
           custom_checkout: "any non-empty string is truthy"
       - job_with_optional_custom_checkout
-    jobs:
-      - job_to_deploy_on_pantheon:  
-          custom_checkout: "any non-empty string is truthy"      
+      - job_to_deploy_on_pantheon     
