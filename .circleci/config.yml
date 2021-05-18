@@ -44,40 +44,24 @@ jobs: # conditional steps may also be defined in `commands:`
     machine: true
     steps:
       - checkout
-
       - run:
-          # Set TERMINUS_ENV and related environment variables.
-          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/1.x/scripts/set-environment
-          name: dependencies
-          command: /build-tools-ci/scripts/set-environment
-
+          name: Set up environment
+          command: ./.circleci/set-up-globals.sh
       - run:
-          name: Global vars
-          # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
-          command: ./.circleci/set-up-global-vars.sh
-
+          name: Dependencies
+          command: composer install
       - run:
-          name: login, delete other ci environments
-          command: ./.circleci/scripts/pantheon/01-prepare
-
-      - add_ssh_keys:
-          fingerprints:
-            - "[ssh key fingerprint]"
-
+          name: Lint
+          command: composer lint
       - run:
-          name: prepare database for site-under test
-          command: ./.circleci/scripts/pantheon/02-init-site
-
+          name: Unit
+          command: composer unit
       - run:
-          name: Set TERMINUS_ENV for Backstop
-          command: |
-              mkdir globals
-              echo $TERMINUS_ENV > globals/TERMINUS_ENV
-
-      - persist_to_workspace:
-          root: .
-          paths:
-              - globals
+          name: Functional
+          command: composer functional
+      - run:
+          name: Style
+          command: composer cs
 workflows:
   build-test-deploy:
     jobs:
