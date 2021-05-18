@@ -1,78 +1,58 @@
-version: 2.1
-executors:
-  my-executor:
+version: 2.0
+
+references:
+
+  # Default container configuration
+  #
+  container_config: &container_config
     docker:
-      - image: circleci/ruby:2.5.1-node-browsers
-        auth:
-          username: mydockerhub-user
-          password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
-jobs: # conditional steps may also be defined in `commands:`
-  job_with_optional_custom_checkout:
-    parameters:
-      custom_checkout:
-        type: string
-        default: ""
-    machine: true
-    steps:
-      - when:
-          condition: <<parameters.custom_checkout>>
-          steps:
-            - run: echo "my custom checkout"
-      - unless:
-          condition: <<parameters.custom_checkout>>
-          steps:
-            - checkout
-  job_to_deploy_on_pantheon:
-    environment:
-      TZ: "/usr/share/zoneinfo/America/New_York"
-      TERMINUS_SITE:  "reacts"
-      TERMINUS_TOKEN: "R81d0KN9SsarKcQKJlSyp8ufixvHBb3s8eo13XUuFZorb"
-      GITHUB_TOKEN:   "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"
-      GIT_EMAIL:      "19geeta65@gmail.com"
-      ADMIN_USERNAME: admin
-      TERM: dumb
-      NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
-    machine: true
+      - image: circleci/php:7.3
+    working_directory: /opt/Drupal
+
+  attach_workspace: &attach_workspace
+    attach_workspace:
+      at: /opt/Drupal
+
+jobs:
+  build:
+    <<: *container_config
     steps:
       - checkout
-
       - run:
-          # Set TERMINUS_ENV and related environment variables.
-          # https://github.com/pantheon-systems/docker-build-tools-ci/blob/1.x/scripts/set-environment
-          name: dependencies
-          command: /build-tools-ci/scripts/set-environment
-
-      - run:
-          name: Global vars
-          # Override of https://github.com/stevector/docker-build-tools-ci/blob/master/dockerfiles/pantheon-ci-testing/scripts/set-up-global-vars.sh
-          command: ./.circleci/set-up-global-vars.sh
-
-      - run:
-          name: login, delete other ci environments
-          command: ./.circleci/scripts/pantheon/01-prepare
-
-      - add_ssh_keys:
-          fingerprints:
-            - "[ssh key fingerprint]"
-
-      - run:
-          name: prepare database for site-under test
-          command: ./.circleci/scripts/pantheon/02-init-site
-
-      - run:
-          name: Set TERMINUS_ENV for Backstop
-          command: |
-              mkdir globals
-              echo $TERMINUS_ENV > globals/TERMINUS_ENV
-
+          name: Install dependencies
+          command: composer install -n -o
       - persist_to_workspace:
           root: .
           paths:
-              - globals
+            - '*'
+
+  test:
+    <<: *container_config
+    steps:
+      - *attach_workspace
+      - run:
+          name: Run tests
+          command: composer test
+
+  deploy:
+    <<: *container_config
+    steps:
+      - *attach_workspace
+      - run:
+          name: Remove development dependencies
+          command: composer install --no-dev -n -o
+      - run:
+          name: Deploy to Pantheon
+          command: .circleci/deploy_to_pantheon.sh
+
 workflows:
-  build-test-deploy:
+  version: 2
+  build_test_deploy:
     jobs:
-      - job_with_optional_custom_checkout:
-          custom_checkout: "any non-empty string is truthy"
-      - job_with_optional_custom_checkout
-      - job_to_deploy_on_pantheon     
+      - build
+      - test:
+          requires:
+            - build
+      - deploy:
+          requires:
+            - test
