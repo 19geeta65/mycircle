@@ -84,5 +84,4 @@ workflows:
       - job_with_optional_custom_checkout:
           custom_checkout: "any non-empty string is truthy"
       - job_with_optional_custom_checkout
-      - job_to_deploy_on_pantheon:  
-          custom_checkout: "any non-em"      
+      - job_to_deploy_on_pantheon
