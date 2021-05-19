@@ -2,19 +2,12 @@ version: 2.1
 executors:
   my-executor:
     docker:
-      - image: circleci/ruby:2.5.1-node-browsers
+      - image: circleci/php:7.1.5-browsers
+      - image: circleci/php:latest
         auth:
           username: mydockerhub-user
           password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
     working_directory: /opt/drupal
-defaults: &defaults
-  docker:
-    - image: circleci/php:7.1
-  working_directory: ~/drupal
-  environment:
-    BASH_ENV: ~/.bashrc
-    TZ: "/usr/share/zoneinfo/America/Los_Angeles"
-    TERM: dumb
 jobs: # conditional steps may also be defined in `commands:`
   job_with_optional_custom_checkout:
     parameters:
