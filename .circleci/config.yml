@@ -9,8 +9,8 @@ executors:
     working_directory: /opt/drupal
 defaults: &defaults
   docker:
-    - image: quay.io/pantheon-public/terminus-plugin-test:1.x
-  working_directory: ~/work/terminus_plugin
+    - image: circleci/php:7.1
+  working_directory: ~/drupal
   environment:
     BASH_ENV: ~/.bashrc
     TZ: "/usr/share/zoneinfo/America/Los_Angeles"
