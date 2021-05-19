@@ -149,7 +149,7 @@ jobs:
       # Deploy to Pantheon
       - run:
           name: deploy to Pantheon
-          command: ./.ci/deploy/pantheon/dev-multidev
+          command: /ci/deploy/pantheon/dev-multidev
 
   behat_test:
     <<: *defaults
