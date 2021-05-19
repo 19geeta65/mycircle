@@ -3,6 +3,7 @@ vversion: 2.1
 defaults: &defaults
   docker:
     - image: quay.io/pantheon-public/build-tools-ci:6.x
+    - image: php:7.2-cli
   working_directory: ~/example_drops_8_composer
   environment:
     #=========================================================================
