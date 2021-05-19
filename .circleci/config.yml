@@ -35,6 +35,10 @@ jobs: # conditional steps may also be defined in `commands:`
       TERM: dumb
       NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
     machine: true
+  build:
+    docker:
+      - image: circleci/php:7.1.5-browsers
+      - image: circleci/php:latest
     steps:
       - checkout
       - run:
