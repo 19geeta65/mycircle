@@ -39,6 +39,13 @@ defaults: &defaults
     #
     #=========================================================================
     TZ: "/usr/share/zoneinfo/America/Los_Angeles"
+    TERMINUS_SITE:  "reacts"
+    TERMINUS_TOKEN: "R81d0KN9SsarKcQKJlSyp8ufixvHBb3s8eo13XUuFZorb"
+    GITHUB_TOKEN:   "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"
+    GIT_EMAIL:      "19geeta65@gmail.com"
+    ADMIN_USERNAME: admin
+    TERM: dumb
+    NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
 
     # The variables below usually do not need to be modified.
 
@@ -50,10 +57,6 @@ defaults: &defaults
     # See: https://discuss.circleci.com/t/circle-2-0-global-environment-variables/8681
     #======================================================================================================================================
 
-    NOTIFY: 'scripts/github/add-commit-comment {project} {sha} "Created multidev environment [{site}#{env}]({dashboard-url})." {site-url}'
-    ADMIN_USERNAME: admin
-    # BUILD_TOOLS_VERSION: ^2.0.0-alpha4
-    TERM: dumb
 
 version: 2
 jobs:
